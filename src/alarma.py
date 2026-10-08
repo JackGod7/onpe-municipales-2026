@@ -9,7 +9,10 @@ from pathlib import Path
 SILENCIO = Path(__file__).parent.parent / "data" / "SILENCIO"
 _SCRIPT = (
     'for i in $(seq 1 3000); do [ -f "{f}" ] && exit 0; '
-    "for t in Sosumi Funk Sosumi; do afplay -v 4 /System/Library/Sounds/$t.aiff; done; sleep 20; done"
+    "afplay -v 4 /System/Library/Sounds/Sosumi.aiff 2>/dev/null || osascript -e 'beep 3'; "
+    "afplay -v 4 /System/Library/Sounds/Funk.aiff 2>/dev/null; "
+    'say -v Monica "reto de verificacion en Chrome" 2>/dev/null; '
+    "sleep 15; done"
 )
 _proc: subprocess.Popen | None = None
 

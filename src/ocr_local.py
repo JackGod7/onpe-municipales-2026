@@ -2,13 +2,14 @@
 
 Recorta la imagen: nombres de organizaciones + solo la columna distrital (quita la provincial para no confundir columnas).
 Valida la suma contra el total de emitidos escrito en el acta y compara con lo digitado por ONPE.
-Calibración (40 actas JEE Ventanilla, 8-oct-2026): fila RP correcta en 35/40; falla con ceros a la izquierda ("091" -> 0)
-y con números alineados a la derecha ("88" -> 8). Sirve para filtrar, NO como prueba: toda diferencia se verifica a ojo.
+Calibración (40 actas JEE Ventanilla, 8-oct-2026): se leen los dígitos como texto y se parsean (los ceros a la izquierda
+"008" ya no se pierden). Sirve para filtrar, NO como prueba: toda diferencia se verifica a ojo.
 Uso: uv run --group viz python src/ocr_local.py [mesa ...]  -> data/extraido/ocr_qwen/<mesa>.json + reports/ocr_qwen_ventanilla.csv
 """
 import base64
 import io
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,13 +27,14 @@ FILAS = {"RP": "RENOVACIÓN POPULAR PERÚ", "PPC": "PARTIDO POPULAR CRISTIANO - 
          "AN": "AHORA NACIÓN - AN", "SP": "PARTIDO DEMOCRÁTICO SOMOS PERÚ", "blancos": "VOTOS EN BLANCO",
          "nulos": "VOTOS NULOS", "impugnados": "VOTOS IMPUGNADOS"}
 PROMPT = (
-    "This is part of a Peruvian election tally sheet. Left: row labels. Right: one column of HANDWRITTEN vote counts "
-    "(each digit in its own small box). Read the handwritten number in each row. Rows, top to bottom: "
-    "RENOVACION POPULAR, (dark/blocked row), PARTIDO POPULAR CRISTIANO, (dark), FUERZA POPULAR, (dark), AHORA NACION, "
-    "(dark), SOMOS PERU, VOTOS EN BLANCO, VOTOS NULOS, VOTOS IMPUGNADOS, TOTAL DE VOTOS EMITIDOS. "
-    "If a box is empty write null, not 0. Do not guess or fix sums. Answer ONLY JSON: "
-    '{"RP":int|null,"PPC":int|null,"FP":int|null,"AN":int|null,"SP":int|null,"blancos":int|null,"nulos":int|null,'
-    '"impugnados":int|null,"total":int|null}'
+    "This is part of a Peruvian election tally sheet. Left: row labels. Right: ONE column of HANDWRITTEN vote counts; "
+    "each number sits in up to 3 small boxes. Read the number of each row by concatenating ALL the digit boxes of that "
+    "row. Examples: boxes 0-0-8 -> 8; boxes 1-3-2 -> 132; boxes 0-9-1 -> 91; all boxes empty -> null. "
+    "Rows, top to bottom: RENOVACION POPULAR, (dark/blocked row), PARTIDO POPULAR CRISTIANO, (dark), FUERZA POPULAR, "
+    "(dark), AHORA NACION, (dark), SOMOS PERU, VOTOS EN BLANCO, VOTOS NULOS, VOTOS IMPUGNADOS, TOTAL DE VOTOS EMITIDOS. "
+    "Do not guess or fix sums. Answer ONLY JSON with the digits as written: "
+    '{"RP":"digits"|null,"PPC":"digits"|null,"FP":"digits"|null,"AN":"digits"|null,"SP":"digits"|null,'
+    '"blancos":"digits"|null,"nulos":"digits"|null,"impugnados":"digits"|null,"total":"digits"|null}'
 )
 
 
@@ -43,7 +45,7 @@ def imagen_recortada(pdf: Path) -> bytes:
                        check=True, capture_output=True)
         im = Image.open(png).convert("L")
     w, h = im.size
-    y0, y1 = int(0.265 * h), int(0.85 * h)            # desde RP hasta TOTAL EMITIDOS
+    y0, y1 = int(0.26 * h), int(0.92 * h)             # desde RP hasta TOTAL EMITIDOS
     etiquetas = im.crop((int(0.08 * w), y0, int(0.37 * w), y1))
     distrital = im.crop((int(0.525 * w), y0, int(0.625 * w), y1))
     lienzo = Image.new("L", (etiquetas.width + distrital.width + 10, etiquetas.height), 255)
@@ -54,12 +56,21 @@ def imagen_recortada(pdf: Path) -> bytes:
     return buf.getvalue()
 
 
+def _num(v) -> int | None:
+    """Valor del JSON del modelo -> entero o None. Acepta "008" (ceros a la izquierda) y descarta ruido."""
+    if v is None or isinstance(v, int):
+        return v
+    digitos = re.sub(r"\D", "", str(v))
+    return int(digitos) if digitos else None
+
+
 def leer(pdf: Path) -> dict:
     cuerpo = json.dumps({"model": MODELO, "prompt": PROMPT, "images": [base64.b64encode(imagen_recortada(pdf)).decode()],
                          "format": "json", "stream": False, "options": {"temperature": 0}}).encode()
     req = urllib.request.Request("http://127.0.0.1:11434/api/generate", data=cuerpo, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=600) as r:
-        return json.loads(json.loads(r.read())["response"])
+        crudo = json.loads(json.loads(r.read())["response"])
+    return {k: _num(v) for k, v in crudo.items()}
 
 
 def onpe_digitado() -> dict[str, dict]:

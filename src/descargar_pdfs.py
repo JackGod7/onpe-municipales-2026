@@ -4,7 +4,7 @@ Prioridad: 1) actas que NO están contabilizadas (envío al JEE / observadas): s
 2) Ventanilla, elección distrital (4); 3) el resto. Por acta: actas/{id} (lista de archivos) -> actas/file?id= (URL firmada) -> PDF.
 Si ONPE pide verificación (202/HTML) suena la alarma y espera a que una persona la resuelva en Chrome.
 Salida: data/actas_pdf/<ubigeo>/<eleccion>/<mesa>_<tipo>.pdf y data/raw/pdfs_manifest.jsonl.
-Uso: uv run python src/descargar_pdfs.py [limite]
+Uso: uv run python src/descargar_pdfs.py [limite] [ubigeo] [eleccion]   (vacío = sin filtro)
 """
 import asyncio
 import base64
@@ -37,13 +37,16 @@ def prioridad(acta: dict) -> tuple:
     return (0 if no_contab else 1, 0 if ventanilla_dist else 1, acta["idUbigeo"] != 240106, acta["idEleccion"] != 4, acta["codigoMesa"])
 
 
-def cola() -> list[dict]:
+def cola(ubigeo: int | None = None, eleccion: int | None = None) -> list[dict]:
     hechas = set()
     if MANIFEST.exists():
         hechas = {json.loads(ln)["acta_id"] for ln in MANIFEST.read_text().splitlines() if ln}
     actas = []
     for ln in MESAS.read_text().splitlines():
-        actas += [a for a in json.loads(ln)["data"] if a["id"] not in hechas]
+        for a in json.loads(ln)["data"]:
+            if a["id"] in hechas or (ubigeo and a["idUbigeo"] != ubigeo) or (eleccion and a["idEleccion"] != eleccion):
+                continue
+            actas.append(a)
     return sorted(actas, key=prioridad)
 
 
@@ -108,8 +111,8 @@ async def con_reto(page, intento_fn, etiqueta: str):
     return res
 
 
-async def main(limite: int | None) -> None:
-    pendientes = cola()[:limite]
+async def main(limite: int | None, ubigeo: int | None = None, eleccion: int | None = None) -> None:
+    pendientes = cola(ubigeo, eleccion)[:limite]
     logger.info("actas por descargar: %d", len(pendientes))
     async with async_playwright() as p:
         ctx = await p.chromium.launch_persistent_context(PROFILE, channel="chrome", headless=False)
@@ -147,4 +150,8 @@ async def main(limite: int | None) -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    asyncio.run(main(int(sys.argv[1]) if len(sys.argv) > 1 else None))
+    argv = sys.argv[1:]
+    limite = int(argv[0]) if len(argv) > 0 and argv[0] else None
+    ubigeo = int(argv[1]) if len(argv) > 1 and argv[1] else None
+    eleccion = int(argv[2]) if len(argv) > 2 and argv[2] else None
+    asyncio.run(main(limite, ubigeo, eleccion))
