@@ -9,6 +9,9 @@ dev = [
     "pytest>=8",
     "ruff>=0.16.10",
 ]
+informe = [
+    "markdown>=3.11",
+]
 viz = [
     "matplotlib>=3.11.2",
 ]
