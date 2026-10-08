@@ -13,18 +13,14 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import FancyBboxPatch  # noqa: E402
 
 import analisis  # noqa: E402
+from decision_jee import es_forma  # noqa: E402
 
 ROOT = Path(__file__).parent.parent
 UBIGEO, ELECCION = 240106, 4
 ORG_A, ORG_B = "RENOVACIÓN POPULAR PERÚ", "PARTIDO DEMOCRÁTICO SOMOS PERÚ"  # A = 2.º lugar, B = 1.º lugar
 AZUL, ROJO, ROJO_CLARO, AZUL_CLARO = "#1F5FA8", "#D9482B", "#F0A08F", "#8FB3DE"
 GRIS, TINTA, FONDO, BORDE = "#8A8F98", "#1B2430", "#F6F4EF", "#DAD6CC"
-FORMA = ("firm", "impugn", "ilegib", "incomplet", "sin datos")
 
-
-def es_forma(motivo: str) -> bool:
-    """Observación de forma (firmas, impugnación, ilegible, incompleta): la que puede terminar en anulación."""
-    return any(k in motivo.lower() for k in FORMA)
 
 
 def apellido(oficial: dict, org: str) -> str:
