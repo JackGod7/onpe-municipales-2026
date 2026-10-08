@@ -85,7 +85,7 @@ def main() -> Path:
 
     ref = max(v["bf"] + v["ba"], v["af"] + v["aa"], necesita) * 1.05
     ax = fig.add_axes([0.36, 0.555, 0.58, 0.17], facecolor=FONDO)
-    fig.text(0.06, 0.742, f"Dónde están los votos en juego", fontsize=11.5, fontweight="bold", color=TINTA)
+    fig.text(0.06, 0.742, "Dónde están los votos en juego", fontsize=11.5, fontweight="bold", color=TINTA)
     fig.text(0.06, 0.727, "ventaja acumulada de cada candidato en las actas donde gana, por tipo de observación",
              fontsize=8, color=GRIS)
     barra_apilada(ax, 1, [(v["bf"], ROJO, f"forma {v['bf']}"), (v["ba"], ROJO_CLARO, f"aritmética {v['ba']}")], ref,
