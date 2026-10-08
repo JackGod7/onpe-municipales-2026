@@ -1,5 +1,21 @@
 # Instrucciones para el OCR de actas — ONPE ERM 2026 (Ventanilla y San Martín de Porres)
 
+## Empieza aquí (solo tienes este enlace)
+1. Descarga el paquete de datos del último *release* de este repo (no está en Git):
+   ```bash
+   gh release download --repo JackGod7/onpe-municipales-2026 --pattern 'onpe-ocr-*.tar.gz' --pattern SHA256SUMS
+   tar xzf onpe-ocr-*.tar.gz && cd onpe-ocr && shasum -a 256 -c SHA256SUMS   # todo debe decir OK
+   ```
+   Sin `gh`: abre la pestaña *Releases* del repo y baja los dos archivos a mano.
+2. Lee `PAQUETE.md` dentro del paquete: dice exactamente qué trae. **Hoy solo hay 40 actas en PDF** (alcalde distrital de Ventanilla,
+   las enviadas al JEE). Habrá más releases; revisa si hay uno nuevo antes de dar nada por terminado.
+3. Revisa esas 40 como prefieras: **a mano, con OCR, o ambos** (lo ideal: OCR y luego revisión humana de las diferencias).
+4. Construye lo que falta en este repo, con commits pequeños y `./gate.sh` en verde antes de cada push:
+   - `src/ocr_vertex.py`: lee un PDF, llama a Vertex con el prompt de `prompts/extraccion_acta.md`, valida el JSON contra el esquema y escribe `ocr/<ubigeo>/<eleccion>/<mesa>.json`. Reanudable, con registro de modelo/prompt/hash.
+   - `src/comparar_ocr.py`: compara OCR contra `raw/mesas.jsonl` y genera `ocr_vs_onpe.csv`.
+   - Tests en `tests/` para ambos (sin llamar a Vertex: usa respuestas simuladas).
+5. Entrega el resultado de las 40 actas JEE de Ventanilla primero: por cada una, votos por organización según el acta y qué cambiaría en el total del distrito (hoy la diferencia oficial entre 1.º y 2.º es de 328 votos).
+
 Eres un agente (o una persona) que recibe un paquete con actas de escrutinio en PDF y debe **transcribirlas con OCR (Vertex AI)**
 para auditar los resultados oficiales de la ONPE. Lee esto completo antes de empezar.
 

@@ -6,6 +6,8 @@ Reutiliza lo construido para ERM/EG 2026:
 - `JackGod7/proyecto_nulidad` — scraping Playwright (la API ONPE solo responde desde navegador), SQLite forense, OCR.
 - `JackGod7/-auditoria-eg2026` — metodología y cadena de custodia.
 
+> **Si vas a hacer el OCR: lee [`AGENTS.md`](AGENTS.md) primero.** Ahí está todo, incluido cómo bajar los datos.
+
 ## Alcance
 - Elecciones: Municipal Distrital y Municipal Provincial (Lima), 4-oct-2026.
 - Distritos: Ventanilla (Callao) y San Martín de Porres (Lima).
