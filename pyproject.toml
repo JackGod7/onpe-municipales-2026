@@ -9,6 +9,9 @@ dev = [
     "pytest>=8",
     "ruff>=0.16.10",
 ]
+viz = [
+    "matplotlib>=3.11.2",
+]
 
 [tool.ruff]
 line-length = 120
@@ -21,3 +24,6 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/infografia_jee.py" = ["E702", "B007"]  # script de gráficos: líneas compactas de matplotlib

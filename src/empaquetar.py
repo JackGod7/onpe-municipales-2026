@@ -17,6 +17,7 @@ INCLUIR = [
     (DATA / "raw" / "mesas.jsonl", "raw/mesas.jsonl"),
     (ROOT / "prompts", "prompts"),
     (ROOT / "docs" / "API_ONPE.md", "docs/API_ONPE.md"),
+    (ROOT / "reports" / "jee_ventanilla_digitado.csv", "analisis/jee_ventanilla_digitado.csv"),
     (ROOT / "AGENTS.md", "AGENTS.md"),
 ]
 

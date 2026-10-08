@@ -110,6 +110,33 @@ def cuadre(a: pd.DataFrame, v: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(filas)
 
 
+def jee_distrital(ubigeo: int = 240106, eleccion: int = 4, org_a: str = "RENOVACIÓN POPULAR PERÚ",
+                  org_b: str = "PARTIDO DEMOCRÁTICO SOMOS PERÚ") -> pd.DataFrame:
+    """Actas no contabilizadas (JEE/observadas) de un distrito con los votos que la ONPE digitó para dos organizaciones.
+
+    Son valores provisionales (digitación), no la lectura del PDF. `motivo_jee` sale de la línea de tiempo del acta.
+    """
+    filas = []
+    mesas = RAW / "mesas.jsonl"
+    for linea in mesas.read_text().splitlines():
+        r = json.loads(linea)
+        if r["ubigeo"] != ubigeo:
+            continue
+        for d in r["data"]:
+            if d["idEleccion"] != eleccion or d["codigoEstadoActa"] == "C":
+                continue
+            votos = {x["adDescripcion"]: x["adVotos"] or 0 for x in d["detalle"] or []}
+            orgs = {k: x for k, x in votos.items() if k not in ESPECIALES}
+            motivo = next((t["descripcionEstadoActaResolucion"] for t in d["lineaTiempo"] or []
+                           if t["codigoEstadoActa"] == "E" and t["descripcionEstadoActaResolucion"]), "")
+            filas.append({"mesa": d["codigoMesa"], "local": d["nombreLocalVotacion"], "habiles": d["totalElectoresHabiles"],
+                          "votos_a": orgs.get(org_a, 0), "votos_b": orgs.get(org_b, 0),
+                          "votos_organizaciones": sum(orgs.values()), "motivo_jee": motivo})
+    out = pd.DataFrame(filas).sort_values("mesa")
+    out.attrs["org_a"], out.attrs["org_b"] = org_a, org_b
+    return out
+
+
 def ranking(a: pd.DataFrame, v: pd.DataFrame, org: str) -> pd.DataFrame:
     x = v[v["org"] == org].merge(a, on="id")
     x = x[x["validos"] > 0].copy()
@@ -142,6 +169,7 @@ def main() -> None:
         avisos(a, v).to_excel(xw, sheet_name="avisos", index=False)
         a.to_excel(xw, sheet_name="actas_todas", index=False)
         cuadre(a, v).to_excel(xw, sheet_name="cuadre_oficial", index=False)
+        jee_distrital().to_excel(xw, sheet_name="jee_ventanilla", index=False)
         for cliente, (org, distrito) in cargar_clientes().items():
             r = ranking(a, v, org)
             r = r[r["distrito"] == distrito]
@@ -151,6 +179,9 @@ def main() -> None:
             vc = vc[vc["distrito"] == distrito] if len(vc) else vc
             if len(vc):
                 vc.head(100).to_excel(xw, sheet_name=f"cruzado_{cliente.split()[0]}", index=False)
+    jee = jee_distrital()
+    jee.rename(columns={"votos_a": "votos_RENOVACION_POPULAR", "votos_b": "votos_SOMOS_PERU"}).to_csv(
+        REPORTS / "jee_ventanilla_digitado.csv", index=False)
     logger.info("reporte: %s", REPORTS / "analisis_mesas.xlsx")
 
 

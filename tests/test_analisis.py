@@ -85,3 +85,19 @@ def test_cargar_clientes_lee_organizacion_y_distrito(tmp_path):
     f = tmp_path / "c.json"
     f.write_text(json.dumps({"X Y": {"organizacion": "ORG", "distrito": "D"}}))
     assert analisis.cargar_clientes(f) == {"X Y": ("ORG", "D")}
+
+
+def test_jee_distrital_lista_actas_no_contabilizadas(tmp_path, monkeypatch):
+    def acta(mesa, estado, a, b):
+        return {"idEleccion": 4, "codigoMesa": mesa, "codigoEstadoActa": estado, "nombreLocalVotacion": "L", "totalElectoresHabiles": 300,
+                "detalle": [{"adDescripcion": "RENOVACIÓN POPULAR PERÚ", "adVotos": a},
+                            {"adDescripcion": "PARTIDO DEMOCRÁTICO SOMOS PERÚ", "adVotos": b},
+                            {"adDescripcion": "VOTOS NULOS", "adVotos": 9}],
+                "lineaTiempo": [{"codigoEstadoActa": "E", "descripcionEstadoActaResolucion": "Acta con error aritmético"}]}
+    linea = {"mesa": "1", "ubigeo": 240106, "data": [acta("1", "E", 40, 55), acta("2", "C", 1, 1)]}
+    (tmp_path / "mesas.jsonl").write_text(json.dumps(linea) + "\n")
+    monkeypatch.setattr(analisis, "RAW", tmp_path)
+    r = analisis.jee_distrital()
+    assert len(r) == 1
+    assert (r.iloc[0]["votos_a"], r.iloc[0]["votos_b"], r.iloc[0]["votos_organizaciones"]) == (40, 55, 95)
+    assert r.iloc[0]["motivo_jee"] == "Acta con error aritmético"
