@@ -1,10 +1,9 @@
-"""Infografía de las actas JEE de un distrito: qué tan reñida está la elección y qué puede cambiar.
+"""Infografía estratégica de las actas JEE de un distrito: cuánto necesita mover el 2.º lugar y dónde está cada voto.
 
 Lee los datos locales (mesas.jsonl y totales_*.json). Uso: uv run --group viz python src/infografia_jee.py
 Salida: reports/infografia_ventanilla_jee.png (1080 x 1620).
 """
 import json
-from collections import Counter
 from pathlib import Path
 
 import matplotlib
@@ -17,112 +16,120 @@ import analisis  # noqa: E402
 
 ROOT = Path(__file__).parent.parent
 UBIGEO, ELECCION = 240106, 4
-ORG_A, ORG_B = "RENOVACIÓN POPULAR PERÚ", "PARTIDO DEMOCRÁTICO SOMOS PERÚ"
-AZUL, ROJO, GRIS, TINTA, FONDO = "#1F5FA8", "#D9482B", "#8A8F98", "#1B2430", "#F6F4EF"
+ORG_A, ORG_B = "RENOVACIÓN POPULAR PERÚ", "PARTIDO DEMOCRÁTICO SOMOS PERÚ"  # A = 2.º lugar, B = 1.º lugar
+AZUL, ROJO, ROJO_CLARO, AZUL_CLARO = "#1F5FA8", "#D9482B", "#F0A08F", "#8FB3DE"
+GRIS, TINTA, FONDO, BORDE = "#8A8F98", "#1B2430", "#F6F4EF", "#DAD6CC"
+FORMA = ("firm", "impugn", "ilegib", "incomplet", "sin datos")
 
 
-def candidato(oficial: dict, org: str) -> str:
+def es_forma(motivo: str) -> bool:
+    """Observación de forma (firmas, impugnación, ilegible, incompleta): la que puede terminar en anulación."""
+    return any(k in motivo.lower() for k in FORMA)
+
+
+def apellido(oficial: dict, org: str) -> str:
     for o in oficial["participantes"]["data"]:
-        if o["nombreAgrupacionPolitica"] == org:
-            return o["nombreCandidato"].title()
-    return org
+        if o["nombreAgrupacionPolitica"] == org and o["nombreCandidato"]:
+            return o["nombreCandidato"].split()[-2].title()
+    return org.title()
 
 
-def tarjeta(ax, x, y, w, h, valor, texto, color):
-    ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.01,rounding_size=0.015", fc="white", ec="#DAD6CC", lw=1.2,
+def caja(fig, x, y, w, h):
+    ax = fig.add_axes([x, y, w, h]); ax.axis("off")
+    ax.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0.005,rounding_size=0.03", fc="white", ec=BORDE, lw=1.2,
                                 transform=ax.transAxes))
-    ax.text(x + w / 2, y + h * 0.60, valor, ha="center", va="center", fontsize=30, fontweight="bold", color=color, transform=ax.transAxes)
-    ax.text(x + w / 2, y + h * 0.20, texto, ha="center", va="center", fontsize=10.5, color=TINTA, transform=ax.transAxes)
+    return ax
+
+
+def barra_apilada(ax, y, partes, total_ref, etiqueta):
+    x = 0
+    for valor, color, texto in partes:
+        ax.barh(y, valor, left=x, color=color, height=0.55)
+        if valor >= total_ref * 0.08:
+            ax.text(x + total_ref * 0.015, y, texto, ha="left", va="center", fontsize=8.5, color="white", fontweight="bold")
+        x += valor
+    ax.text(-total_ref * 0.02, y, etiqueta, ha="right", va="center", fontsize=9, color=TINTA)
 
 
 def main() -> Path:
     oficial = json.loads((ROOT / "data" / "raw" / f"totales_{UBIGEO}_{ELECCION}.json").read_text())
     tot = {o["nombreAgrupacionPolitica"]: o["totalVotosValidos"] for o in oficial["participantes"]["data"]}
-    a_ofi, b_ofi = tot[ORG_A], tot[ORG_B]
-    nombre_a, nombre_b = candidato(oficial, ORG_A), candidato(oficial, ORG_B)
-    corto_a, corto_b = nombre_a.split()[-2], nombre_b.split()[-2]  # apellido paterno
+    a, b = apellido(oficial, ORG_A), apellido(oficial, ORG_B)
+    margen_hoy = tot[ORG_B] - tot[ORG_A]
 
     jee = analisis.jee_distrital(UBIGEO, ELECCION, ORG_A, ORG_B)
-    d = jee["votos_b"] - jee["votos_a"]  # >0: favorece a B
-    gana_b, gana_a = int(d[d > 0].sum()), int(-d[d < 0].sum())
-    margen = b_ofi - a_ofi  # ventaja oficial de B hoy
-    escenarios = [
-        (f"Solo cuentan las actas que\nfavorecen a {corto_b}", margen + gana_b),
-        ("Se cuentan las 40\ncomo fueron digitadas", margen + gana_b - gana_a),
-        ("Ninguna se cuenta\n(todas anuladas)", margen),
-        (f"Solo cuentan las actas que\nfavorecen a {corto_a}", margen - gana_a),
-    ]
-    motivos = Counter(m for fila in jee["motivo_jee"] for m in {x.strip() for x in fila.split(",")} if m)
+    jee = jee.assign(d=jee["votos_b"] - jee["votos_a"], forma=jee["motivo_jee"].map(es_forma))
+    margen_todo = margen_hoy + int(jee["d"].sum())
+    necesita = margen_todo + 1
+    b_forma = jee[(jee.d > 0) & jee.forma]; b_arit = jee[(jee.d > 0) & ~jee.forma]
+    a_forma = jee[(jee.d < 0) & jee.forma]; a_arit = jee[(jee.d < 0) & ~jee.forma]
+    v = {k: int(abs(x["d"].sum())) for k, x in {"bf": b_forma, "ba": b_arit, "af": a_forma, "aa": a_arit}.items()}
 
     fig = plt.figure(figsize=(7.2, 10.8), dpi=150, facecolor=FONDO)
-    fig.text(0.06, 0.965, "Ventanilla · alcalde distrital", fontsize=22, fontweight="bold", color=TINTA, va="top")
-    fig.text(0.06, 0.935, f"{len(jee)} actas en el JEE pueden decidir la elección", fontsize=14, color=ROJO, va="top", fontweight="bold")
-    fig.text(0.06, 0.912, "Datos ONPE (8-oct-2026). Votos de esas actas = digitación provisional, no la lectura del PDF.",
-             fontsize=8.5, color=GRIS, va="top")
+    fig.text(0.06, 0.968, "Ventanilla · alcalde distrital", fontsize=21, fontweight="bold", color=TINTA, va="top")
+    fig.text(0.06, 0.938, f"Qué necesita {a} en las {len(jee)} actas del JEE", fontsize=14, color=AZUL, va="top", fontweight="bold")
+    fig.text(0.06, 0.914, "Datos ONPE 8-oct-2026 · votos de esas actas = digitación provisional, a confirmar con el PDF",
+             fontsize=8.3, color=GRIS, va="top")
 
-    ax = fig.add_axes([0, 0.745, 1, 0.15]); ax.axis("off")
-    tarjeta(ax, 0.06, 0.05, 0.28, 0.9, f"{margen:,}", f"votos de ventaja\n{corto_b} hoy", ROJO)
-    tarjeta(ax, 0.36, 0.05, 0.28, 0.9, f"{len(jee)}", f"actas sin contar\n({int(jee['habiles'].sum()):,} electores)", TINTA)
-    tarjeta(ax, 0.66, 0.05, 0.28, 0.9, f"{int(jee['votos_organizaciones'].sum()):,}", "votos digitados\nen esas actas", AZUL)
+    kp = fig.add_axes([0.06, 0.785, 0.88, 0.11]); kp.axis("off")
+    for i, (val, txt, col) in enumerate([
+        (f"{margen_hoy:,}", f"ventaja de {b}\ncon lo contado hoy", ROJO),
+        (f"{margen_todo:,}", f"ventaja de {b} si las {len(jee)}\nse cuentan como están", ROJO),
+        (f"{necesita:,}", f"votos netos que {a}\nnecesita mover", AZUL),
+    ]):
+        x = i * 0.34
+        kp.add_patch(FancyBboxPatch((x, 0), 0.32, 1, boxstyle="round,pad=0.005,rounding_size=0.04", fc="white", ec=BORDE, lw=1.2,
+                                    transform=kp.transAxes))
+        kp.text(x + 0.16, 0.64, val, ha="center", va="center", fontsize=26, fontweight="bold", color=col, transform=kp.transAxes)
+        kp.text(x + 0.16, 0.22, txt, ha="center", va="center", fontsize=8.6, color=TINTA, transform=kp.transAxes)
 
-    ax1 = fig.add_axes([0.30, 0.545, 0.64, 0.17], facecolor=FONDO)
-    ax1.set_title("¿Cómo puede quedar la diferencia?",
-                  fontsize=10.5, color=TINTA, loc="left", x=-0.45, fontweight="bold")
-    y = range(len(escenarios))[::-1]
-    for yi, (nom, val) in zip(y, escenarios, strict=True):
-        ax1.barh(yi, val, color=ROJO if val > 0 else AZUL, height=0.62)
-        ax1.text(val + (25 if val > 0 else -25), yi, f"{val:+,}", va="center", ha="left" if val > 0 else "right",
-                 fontsize=11, fontweight="bold", color=TINTA)
-    ax1.set_yticks(list(y)); ax1.set_yticklabels([n for n, _ in escenarios], fontsize=8.5, color=TINTA)
-    ax1.axvline(0, color=TINTA, lw=1)
-    ax1.text(1.0, 1.02, f"+ ventaja de {corto_b}   − ventaja de {corto_a}", transform=ax1.transAxes, ha="right", fontsize=8, color=GRIS)
-    lim = max(abs(v) for _, v in escenarios) * 1.25
-    ax1.set_xlim(-lim * 0.45, lim); ax1.set_xticks([])
-    for s in ax1.spines.values():
-        s.set_visible(False)
-    ax1.tick_params(length=0)
+    ref = max(v["bf"] + v["ba"], v["af"] + v["aa"], necesita) * 1.05
+    ax = fig.add_axes([0.36, 0.555, 0.58, 0.17], facecolor=FONDO)
+    fig.text(0.06, 0.742, f"Dónde están los votos en juego", fontsize=11.5, fontweight="bold", color=TINTA)
+    fig.text(0.06, 0.727, "ventaja acumulada de cada candidato en las actas donde gana, por tipo de observación",
+             fontsize=8, color=GRIS)
+    barra_apilada(ax, 1, [(v["bf"], ROJO, f"forma {v['bf']}"), (v["ba"], ROJO_CLARO, f"aritmética {v['ba']}")], ref,
+                  f"Actas donde gana {b}\n({len(b_forma) + len(b_arit)} actas)")
+    barra_apilada(ax, 0, [(v["af"], AZUL, f"forma {v['af']}"), (v["aa"], AZUL_CLARO, f"aritmética {v['aa']}")], ref,
+                  f"Actas donde gana {a}\n({len(a_forma) + len(a_arit)} actas)")
+    ax.plot([necesita, necesita], [0.62, 1.42], color=TINTA, lw=1.4, ls="--")
+    ax.text(necesita, 1.5, f"{a} necesita {necesita} de aquí", ha="center", fontsize=8.5, color=TINTA, fontweight="bold")
+    ax.set_xlim(0, ref); ax.set_ylim(-0.5, 1.75); ax.axis("off")
 
-    ax2 = fig.add_axes([0.30, 0.355, 0.64, 0.14], facecolor=FONDO)
-    ax2.set_title("¿Por qué están en el JEE?", fontsize=10.5, color=TINTA, loc="left",
-                  x=-0.45, fontweight="bold")
-    ax2.text(1.0, 1.02, "un acta puede tener varios motivos", transform=ax2.transAxes, ha="right", fontsize=8, color=GRIS)
-    items = motivos.most_common()[::-1]
-    ax2.barh([i[0].replace("Acta ", "").capitalize() for i in items], [i[1] for i in items], color=GRIS, height=0.6)
-    for i, (_, n) in enumerate(items):
-        ax2.text(n + 0.3, i, str(n), va="center", fontsize=9.5, color=TINTA, fontweight="bold")
-    ax2.set_xticks([]); ax2.tick_params(length=0, labelsize=8.5)
-    for s in ax2.spines.values():
-        s.set_visible(False)
-
-    top = jee.assign(d=d, ad=d.abs()).sort_values("ad", ascending=False).head(5)
-    lineas = ["Actas con mayor peso (diferencia entre ambos): " + ", ".join(
-        f"{r.mesa} ({'+' if r.d > 0 else '−'}{int(r.ad)} {corto_b if r.d > 0 else corto_a})" for r in top.itertuples())]
-    ax3 = fig.add_axes([0.06, 0.04, 0.88, 0.27]); ax3.axis("off")
-    ax3.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0.01,rounding_size=0.02", fc="white", ec="#DAD6CC", lw=1.2,
-                                 transform=ax3.transAxes))
-    ax3.text(0.04, 0.92, "Qué decidir", fontsize=14, fontweight="bold", color=TINTA, va="top", transform=ax3.transAxes)
-    pasos = [
-        f"1. Leer primero las {motivos.get('Acta con error aritmético', 0)} actas con error aritmético: ahí la digitación\n    puede estar mal y un acta puede mover decenas de votos.",
-        f"2. Preparar sustento para las {motivos.get('Acta impugnada', 0)} impugnadas y {motivos.get('Acta sin firmas', 0)} sin firmas: las\n    resuelve el JEE; llevar el PDF y el acta de instalación.",
-        "3. El resultado real depende de lo que diga cada PDF y de la\n    resolución del JEE, no de la cifra digitada. Por eso: OCR + revisión manual.",
-        lineas[0],
+    lect = caja(fig, 0.06, 0.345, 0.88, 0.18)
+    lect.text(0.04, 0.88, "Lectura estratégica", fontsize=12, fontweight="bold", color=TINTA, va="top", transform=lect.transAxes)
+    lineas = [
+        f"• Si se anularan las {len(b_forma)} actas de forma de {b}, {a} recorta {v['bf']}: no alcanza ({necesita}).",
+        f"• Para pasar adelante necesita además que caigan o se corrijan a su favor actas\n   aritméticas de {b} ({v['ba']} votos), que normalmente se corrigen, no se anulan.",
+        f"• Riesgo propio: {len(a_forma)} actas de forma donde gana {a} ({v['af']} votos). Si se\n   anulan, la ventaja de {b} crece. Defenderlas es la primera prioridad.",
+        "• Conclusión: camino estrecho. Se gana acta por acta con el PDF, no con la cifra digitada.",
     ]
-    yy = 0.78
-    for p in pasos[:3]:
-        ax3.text(0.04, yy, p, fontsize=9.5, color=TINTA, va="top", transform=ax3.transAxes, linespacing=1.35)
-        yy -= 0.22
-    ax3.text(0.04, yy, "\n".join(_ajustar(pasos[3], 62)), fontsize=8.8, color=GRIS, va="top", transform=ax3.transAxes, linespacing=1.3)
-    fig.text(0.06, 0.012, "Fuente: ONPE · resultadoelectoral.onpe.gob.pe · indicios a verificar contra el acta, no conclusiones.",
-             fontsize=7.5, color=GRIS)
+    y = 0.70
+    for ln in lineas:
+        lect.text(0.04, y, ln, fontsize=8.7, color=TINTA, va="top", transform=lect.transAxes, linespacing=1.3)
+        y -= 0.19 if "\n" in ln else 0.12
+
+    dec = caja(fig, 0.06, 0.045, 0.88, 0.28)
+    dec.text(0.04, 0.92, "Qué hacer ahora", fontsize=12, fontweight="bold", color=TINTA, va="top", transform=dec.transAxes)
+    top_a = ", ".join(a_forma.sort_values("d")["mesa"].head(4))
+    top_b = ", ".join(b_arit.sort_values("d", ascending=False)["mesa"].head(4))
+    pasos = [
+        f"1. DEFENDER: abogado y personero en la audiencia de las {len(a_forma)} actas de forma\n    propias (ej. {top_a}). Llevar el PDF y el acta de instalación.",
+        f"2. VERIFICAR: leer el PDF de las {len(b_arit)} actas aritméticas de {b}\n    (ej. {top_b}). Si la cifra real difiere, pedir la corrección con prueba.",
+        "3. IMPUGNAR SOLO CON CAUSAL REAL: firmas, ilegibilidad o actas incompletas,\n    documentadas. Un pedido sin sustento resta credibilidad ante el JEE.",
+        "4. PLAZOS: las apelaciones al JNE corren en días. Calendario con el abogado hoy.",
+        "5. COMUNICACIÓN: no declarar victoria ni fraude. Mensaje: «que se cuente cada voto».",
+    ]
+    y = 0.78
+    for p in pasos:
+        dec.text(0.04, y, p, fontsize=8.6, color=TINTA, va="top", transform=dec.transAxes, linespacing=1.3)
+        y -= 0.165 if "\n" in p else 0.10
+    fig.text(0.06, 0.015, "Fuente: ONPE · resultadoelectoral.onpe.gob.pe · indicios a verificar contra el acta; confirmar reglas y plazos con abogado.",
+             fontsize=7, color=GRIS)
 
     salida = ROOT / "reports" / "infografia_ventanilla_jee.png"
     fig.savefig(salida, facecolor=FONDO)
     return salida
-
-
-def _ajustar(texto: str, ancho: int) -> list[str]:
-    import textwrap
-    return textwrap.wrap(texto, ancho)
 
 
 if __name__ == "__main__":
