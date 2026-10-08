@@ -1,0 +1,19 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+      - name: Nada de datos ni secretos versionados
+        run: |
+          if git ls-files | grep -E '^(data/|\.env$|.*\.db$|.*\.xlsx$)'; then echo "archivo prohibido en Git"; exit 1; fi

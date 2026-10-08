@@ -1,0 +1,13 @@
+# datos y sesiones locales (datos de clientes, perfil de Chrome con cookies)
+data/
+reports/*.xlsx
+reports/*.csv
+.env
+.env.*
+!.env.example
+*.db
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+dist/

@@ -1,0 +1,23 @@
+[project]
+name = "onpe-municipales-2026"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["playwright>=1.49", "pandas>=2.2", "openpyxl>=3.1"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.16.10",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
