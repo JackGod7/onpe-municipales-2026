@@ -5,6 +5,7 @@ Uso: uv run --group viz python src/acta_anexos.py [mesa ...] -> data/extraido/an
 import base64
 import json
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -34,11 +35,16 @@ def _leer(img: Image.Image, prompt: str) -> dict:
     img.save(buf, format="PNG")
     cuerpo = json.dumps({"model": o.MODELO, "prompt": prompt, "images": [base64.b64encode(buf.getvalue()).decode()],
                          "format": "json", "stream": False, "options": {"temperature": 0}}).encode()
-    for _ in range(2):
+    texto = ""
+    for intento in range(4):
         req = urllib.request.Request("http://127.0.0.1:11434/api/generate", data=cuerpo,
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=600) as r:
-            texto = json.loads(r.read())["response"]
+        try:
+            with urllib.request.urlopen(req, timeout=600) as r:
+                texto = json.loads(r.read())["response"]
+        except urllib.error.HTTPError:  # Ollama devuelve 500 si está recargando el modelo: esperar y reintentar
+            time.sleep(10 * (intento + 1))
+            continue
         try:
             return json.loads(texto)
         except json.JSONDecodeError:
@@ -69,7 +75,7 @@ def main(filtros: list[str]) -> None:
     pdfs = [p for p in sorted(o.PDFS.glob("*_escrutinio.pdf")) if not filtros or p.name[:6] in filtros]
     nuevas = [p for p in pdfs if not (OUT / f"{p.name[:6]}.json").exists()]
     print(f"actas: {len(pdfs)} (nuevas: {len(nuevas)})", flush=True)
-    with ThreadPoolExecutor(max_workers=3) as ex:
+    with ThreadPoolExecutor(max_workers=2) as ex:
         list(ex.map(procesar, nuevas))
     import csv
     filas = []
